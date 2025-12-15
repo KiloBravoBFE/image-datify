@@ -19,20 +19,31 @@ if (IS_WINDOWS): # good luck, I don't have a Windows machine I want to test this
     except ImportError:
         IS_WINDOWS = False
 
-DATE_PATTERN = re.compile(r"(\d{8})_(\d{6})")
+FILENAME_PATTERNS = [
+    (re.compile(r"(\d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2})"), "%Y-%m-%d at %H.%M.%S"),
+    (re.compile(r"(\d{4}-\d{2}-\d{2} at \d{2}-\d{2}-\d{2})"), "%Y-%m-%d at %H-%M-%S"),
+    (re.compile(r"(\d{4}-\d{2}-\d{2}-\d{2}\d{2}\d{2})"), "%Y-%m-%d-%H%M%S"),
+
+    (re.compile(r"(\d{8})_(\d{6})"), "%Y%m%d%H%M%S"),
+    (re.compile(r"(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})"), "%Y-%m-%d%H-%M-%S"),
+    (re.compile(r"IMG_(\d{8})_(\d{6})"), "%Y%m%d%H%M%S"),
+]
 
 def extract_datetime(filename):
-    match = DATE_PATTERN.search(filename)
-    if (not match):
-        return None
-    try:
-        return datetime.datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S")
-    except ValueError:
-        return None
-
-def is_mtp_path(path):
-    return "/gvfs/mtp:" in path
-
+    # Try to parse knoqn patterns
+    for pattern, fmt in FILENAME_PATTERNS:
+        m = pattern.search(filename)
+        if (not m):
+            continue
+        try:
+            if (m.lastindex == 2):
+                s = f"{m.group(1)}{m.group(2)}"
+            else:
+                s = m.group(1)
+            return datetime.datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -86,12 +97,12 @@ class MainWindow(QMainWindow):
         self.apply_btn = QPushButton("Apply Timestamp Changes")
         self.apply_btn.setFixedHeight(40)
         self.apply_btn.clicked.connect(self.apply_changes)
-        layout.addWidget(self.apply_btn, alignment=Qt.AlignRight)
+        layout.addWidget(self.apply_btn)
 
     def choose_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Image Folder")
         if (folder):
-            if (is_mtp_path(folder)):
+            if ("/gvfs/mtp:" in folder):
                 QMessageBox.warning(
                     self,
                     "MTP Device Detected",
@@ -105,7 +116,7 @@ class MainWindow(QMainWindow):
     def load_images(self, folder):
         self.table.setRowCount(0)
         for filename in sorted(os.listdir(folder)):
-            if (not filename.lower().endswith((".jpg", ".jpeg", ".png"))):
+            if (not filename.lower().endswith((".jpg", ".jpeg", ".png", ".jxl", ".cr2"))):
                 continue
 
             dt = extract_datetime(filename)
@@ -141,7 +152,7 @@ class MainWindow(QMainWindow):
         if (not os.path.isdir(folder)):
             QMessageBox.warning(self, "Error", "Invalid folder.")
             return
-        if (is_mtp_path(folder)):
+        if ("/gvfs/mtp:" in folder):
             QMessageBox.warning(
                 self,
                 "MTP Device Detected",
@@ -202,7 +213,6 @@ class MainWindow(QMainWindow):
         QApplication.restoreOverrideCursor()
         self.progress.hide()
         QMessageBox.information(self, "Done", f"Timestamps updated for {updated} files.")
-
 
 def main():
     QCoreApplication.setAttribute(Qt.AA_DontUseNativeDialogs, False)
